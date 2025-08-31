@@ -1,0 +1,5 @@
+/target
+node_modules/
+templates/**/pnpm-lock.yaml
+.vscode
+example_output/

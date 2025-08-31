@@ -1,0 +1,8 @@
+[tools]
+
+[tasks.test-cli]
+description = "Run hayaku create with the example Rust template"
+run = [
+  "mkdir -p example_output",
+  "cargo run -- create -p example_output/bar --template-dir example_templates/rust -f"
+]
