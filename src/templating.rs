@@ -55,12 +55,29 @@ pub fn create_project(
     Ok(())
 }
 
+fn process_dest_path(dest_path: &Path, context: &TeraContext) -> PathBuf {
+    let components = dest_path.components().map(|comp| {
+        let comp_str = comp.as_os_str().to_string_lossy();
+        if comp_str.starts_with('[') && comp_str.ends_with(']') {
+            let var_name = &comp_str[1..comp_str.len() - 1];
+            if let Some(value) = context.get(var_name) {
+                if let Some(s) = value.as_str() {
+                    return PathBuf::from(s);
+                }
+            }
+        }
+        PathBuf::from(comp.as_os_str())
+    });
+    components.collect::<PathBuf>()
+}
+
 fn render_from_template_file(
     template_file: &Path,
     dest_path: &Path,
     tera: &mut Tera,
     context: &TeraContext,
 ) -> Result<()> {
+    let dest_path = process_dest_path(dest_path, context);
     if let Some(parent) = dest_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create parent directory {}", parent.display()))?;
@@ -82,7 +99,7 @@ fn render_from_template_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use std::{fs, path::Path};
 
     fn config(id: &str) -> HayakuConfig {
         HayakuConfig {
@@ -155,5 +172,16 @@ mod tests {
         );
         assert!(!dest_dir.join("ignored.txt").exists());
         assert!(!dest_dir.join(".git").exists());
+    }
+
+    #[test]
+    fn process_dest_path_substitutes_with_context() {
+        let mut context = TeraContext::new();
+        context.insert("project_name", "demo");
+
+        let dest = Path::new("output/[PROJECT_NAME]/config.toml");
+        let resolved = super::process_dest_path(dest, &context);
+
+        assert_eq!(resolved, Path::new("output/demo/config.toml"));
     }
 }

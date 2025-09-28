@@ -16,14 +16,6 @@ use std::path::PathBuf;
 pub struct Hayaku {
     #[command(subcommand)]
     command: Commands,
-
-    /// Where the new directory should be created
-    #[arg(global = true, long, default_value = ".")]
-    pub base_dir: PathBuf,
-
-    /// Override for local template directory
-    #[arg(global = true, long)]
-    pub local_template_dir: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -85,7 +77,7 @@ fn validate_directory(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn create(hayaku: &Hayaku, create_options: &CreateOptions) -> Result<()> {
+fn create(create_options: &CreateOptions) -> Result<()> {
     cliclack::intro("hayaku!")?;
 
     let template_path: PathBuf = if let Some(template_dir) = &create_options.template_dir {
@@ -111,7 +103,7 @@ fn create(hayaku: &Hayaku, create_options: &CreateOptions) -> Result<()> {
             PathBuf::new() // Placeholder, will be handled as GitHub template
         }
     } else {
-        let local_templates = LocalTemplates::try_new(hayaku)?;
+        let local_templates = LocalTemplates::try_new()?;
         if local_templates.is_empty() {
             bail!("No local templates found. Please add a template first.");
         }
@@ -161,7 +153,7 @@ fn create(hayaku: &Hayaku, create_options: &CreateOptions) -> Result<()> {
                 .interact()
         })?;
 
-    let dest_path = hayaku.base_dir.join(&project_path_str);
+    let dest_path = PathBuf::from(&project_path_str);
     if dest_path.exists() && !create_options.force {
         let should_overwrite = cliclack::confirm(format!(
             "Directory {} already exists. Overwrite?",
@@ -187,9 +179,9 @@ pub fn run() -> Result<()> {
     let cli = Hayaku::try_parse()?;
 
     match cli.command {
-        Commands::Create(ref create_options) => create(&cli, create_options),
+        Commands::Create(ref create_options) => create(create_options),
         Commands::List => {
-            let local_templates = LocalTemplates::try_new(&cli)?;
+            let local_templates = LocalTemplates::try_new()?;
 
             cliclack::log::info(format!(
                 "Available templates in {}:",
@@ -209,9 +201,9 @@ pub fn run() -> Result<()> {
             Ok(())
         }
         Commands::Edit => {
-            let local_templates = LocalTemplates::try_new(&cli)?;
+            let local_templates = LocalTemplates::try_new()?;
             std::process::Command::new("code")
-                .arg(local_templates.local_template_dir())
+                .arg(local_templates.hayaku_dir())
                 .status()
                 .map_err(|e| anyhow::anyhow!("Failed to open code editor: {}", e))?;
 

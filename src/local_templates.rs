@@ -1,4 +1,3 @@
-use crate::cli::Hayaku;
 use crate::config::HayakuConfig;
 use anyhow::{Result, anyhow};
 use std::{
@@ -14,22 +13,18 @@ pub struct LocalTemplate {
 
 #[derive(Debug, Clone)]
 pub struct LocalTemplates {
+    hayaku_dir: PathBuf,
     local_template_dir: PathBuf,
     templates: HashMap<String, LocalTemplate>,
 }
 
 impl LocalTemplates {
-    pub fn try_new(options: &Hayaku) -> Result<Self> {
-        let local_template_dir = options.local_template_dir.clone().unwrap_or_else(|| {
-            std::env::home_dir()
-                .unwrap()
-                .join(".hayaku")
-                .join("templates")
-        });
+    pub fn try_new_from_dir(hayaku_dir: &Path) -> Result<Self> {
+        let local_template_dir = hayaku_dir.join("templates");
 
-        if !local_template_dir.exists() {
+        if !hayaku_dir.exists() {
             let should_create = cliclack::confirm(format!(
-                "Template dir {} does not exist. Would you like to create it?",
+                "Template directory {} does not exist. Would you like to create it?",
                 local_template_dir.display()
             ))
             .interact()?;
@@ -39,11 +34,11 @@ impl LocalTemplates {
                     .map_err(|e| anyhow!("Failed to create template directory: {}", e))?;
                 cliclack::log::info("Directory was created!")?;
             } else {
-                return Ok(Self {
-                    local_template_dir,
-                    templates: HashMap::new(),
-                });
+                return Err(anyhow!("Aborted by user"));
             }
+        } else if !local_template_dir.exists() {
+            std::fs::create_dir_all(&local_template_dir)
+                .map_err(|e| anyhow!("Failed to create template directory: {}", e))?;
         }
 
         let mut templates = HashMap::new();
@@ -58,9 +53,26 @@ impl LocalTemplates {
         }
 
         Ok(Self {
+            hayaku_dir: hayaku_dir.to_path_buf(),
             local_template_dir,
             templates,
         })
+    }
+    pub fn try_new() -> Result<Self> {
+        let env_dir: String = std::env::var("HAYAKU_DIRECTORY").unwrap_or("".to_string());
+
+        let hayaku_dir = if env_dir != "" {
+            PathBuf::from(env_dir)
+        } else {
+            std::env::home_dir()
+                .ok_or_else(|| anyhow!("Could not determine home directory"))?
+                .join(".hayaku")
+        };
+        Self::try_new_from_dir(&hayaku_dir)
+    }
+
+    pub fn hayaku_dir(&self) -> &Path {
+        &self.hayaku_dir
     }
 
     pub fn local_template_dir(&self) -> &Path {
@@ -87,34 +99,24 @@ impl LocalTemplates {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
-
-    fn hayaku_with_dir(dir: &std::path::Path) -> Hayaku {
-        Hayaku::try_parse_from([
-            "hayaku",
-            "--local-template-dir",
-            dir.to_str().unwrap(),
-            "list",
-        ])
-        .expect("failed to parse test cli arguments")
-    }
 
     #[test]
     fn uses_provided_template_directory() {
         let dir = tempfile::tempdir().expect("create temp dir");
-        let hayaku = hayaku_with_dir(dir.path());
 
-        let templates = LocalTemplates::try_new(&hayaku).expect("init local templates");
+        let templates = LocalTemplates::try_new_from_dir(dir.path()).expect("init local templates");
 
-        assert_eq!(templates.local_template_dir(), dir.path());
+        assert_eq!(templates.hayaku_dir(), dir.path());
+        assert_eq!(templates.local_template_dir(), dir.path().join("templates"));
         assert!(templates.templates().is_empty());
     }
 
     #[test]
     fn discovers_template_directories() {
         let dir = tempfile::tempdir().expect("create temp dir");
-        let template_a = dir.path().join("alpha");
-        let template_b = dir.path().join("beta");
+        let template_dir = dir.path().join("templates");
+        let template_a = template_dir.join("alpha");
+        let template_b = template_dir.join("beta");
         std::fs::create_dir_all(&template_a).expect("create alpha template");
         std::fs::create_dir_all(&template_b).expect("create beta template");
         std::fs::write(
@@ -123,9 +125,7 @@ mod tests {
         )
         .expect("write config");
 
-        let hayaku = hayaku_with_dir(dir.path());
-
-        let templates = LocalTemplates::try_new(&hayaku).expect("init local templates");
+        let templates = LocalTemplates::try_new_from_dir(dir.path()).expect("init local templates");
 
         assert_eq!(templates.templates().len(), 2);
         assert!(templates.get("alpha-template").is_some());
@@ -138,10 +138,8 @@ mod tests {
 
     #[test]
     fn empty_when_no_subdirectories() {
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let hayaku = hayaku_with_dir(dir.path());
-
-        let templates = LocalTemplates::try_new(&hayaku).expect("init local templates");
+        let templates = LocalTemplates::try_new_from_dir(tempfile::tempdir().unwrap().path())
+            .expect("init local templates");
         assert!(templates.templates().is_empty());
     }
 }

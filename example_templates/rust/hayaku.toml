@@ -1,2 +1,7 @@
 [template]
 name = "rust"
+
+[env.crate_type]
+prompt = "Do you want a library or binary crate?"
+choices = ["lib", "bin"]
+default = "bin"

@@ -1,5 +1,8 @@
 [tools]
 
+[tasks.hayaku]
+run = "cargo run --"
+
 [tasks.example]
 description = "Run hayaku create with the example Rust template"
 run = [
