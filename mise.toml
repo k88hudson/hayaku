@@ -1,8 +1,14 @@
 [tools]
 
-[tasks.test-cli]
+[tasks.example]
 description = "Run hayaku create with the example Rust template"
 run = [
   "mkdir -p example_output",
   "cargo run -- create -p example_output/bar --template-dir example_templates/rust -f"
+]
+
+[tasks.'install:local']
+description = "Install hayaku locally"
+run = [
+  "cargo install --path ."
 ]
