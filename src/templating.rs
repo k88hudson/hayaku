@@ -1,6 +1,6 @@
 use anyhow::{Context as AnyhowContext, Result};
 use ignore::WalkBuilder;
-use std::ffi::OsStr;
+use ignore::overrides::OverrideBuilder;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tera::{Context as TeraContext, Tera};
@@ -17,11 +17,13 @@ pub fn create_project(template_dir: &Path, dest_dir: &Path, context: &TeraContex
         })?;
     }
 
+    let mut overrides = OverrideBuilder::new(".");
+    overrides.add("!**/.git")?;
+    overrides.add("!**/hayaku.toml")?;
+    let overrides = overrides.build()?;
+
     let mut walker = WalkBuilder::new(template_dir);
-    walker
-        .git_ignore(true)
-        .hidden(false)
-        .filter_entry(|entry| entry.file_name() != OsStr::new(".git"));
+    walker.git_ignore(true).hidden(false).overrides(overrides);
 
     for entry in walker.build() {
         let entry = entry?;

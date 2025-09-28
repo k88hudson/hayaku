@@ -1,10 +1,6 @@
 [template]
 name = "rust"
 
-[env.other]
-type = "string"
-prompt = "What do you really want?"
-
 [env.crate_type]
 type = "choices"
 prompt = "Do you want a library or binary crate?"

@@ -3,9 +3,29 @@ use std::path::Path;
 
 use anyhow::{Result, anyhow};
 use cliclack;
+use serde::{Deserialize, Serialize};
 use tera::Context as TeraContext;
 
-use crate::config::{EnvVarConfig, HayakuConfig};
+use crate::config::HayakuConfig;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EnvVarConfig {
+    String {
+        prompt: String,
+        default: Option<String>,
+    },
+    Choices {
+        prompt: String,
+        choices: Vec<String>,
+        default: Option<String>,
+    },
+    Bool {
+        prompt: String,
+        #[serde(default)]
+        default: bool,
+    },
+}
 
 pub fn prompt_for_env(config: &HayakuConfig) -> Result<HashMap<String, String>> {
     if config.env.is_empty() {
@@ -110,26 +130,6 @@ pub fn project_name_from_path(dest_path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::EnvVarConfig;
-
-    fn sample_config() -> HayakuConfig {
-        let mut env = HashMap::new();
-        env.insert(
-            "crate_type".to_string(),
-            EnvVarConfig::Choices {
-                prompt: "Crate type".into(),
-                choices: vec!["lib".into(), "bin".into()],
-                default: Some("bin".into()),
-            },
-        );
-        HayakuConfig {
-            name: "sample".into(),
-            display_name: None,
-            description: None,
-            author: None,
-            env,
-        }
-    }
 
     #[test]
     fn canonicalizes_env_keys() {

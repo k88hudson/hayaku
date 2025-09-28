@@ -1,25 +1,7 @@
+use crate::env::EnvVarConfig;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum EnvVarConfig {
-    String {
-        prompt: String,
-        default: Option<String>,
-    },
-    Choices {
-        prompt: String,
-        choices: Vec<String>,
-        default: Option<String>,
-    },
-    Bool {
-        prompt: String,
-        #[serde(default)]
-        default: bool,
-    },
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TemplateSection {
