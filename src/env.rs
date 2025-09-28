@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Result, anyhow};
@@ -6,7 +5,7 @@ use cliclack;
 use serde::{Deserialize, Serialize};
 use tera::Context as TeraContext;
 
-use crate::config::HayakuConfig;
+use crate::{config::TemplateConfig, hayaku_context::Hayaku};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -27,28 +26,20 @@ pub enum EnvVarConfig {
     },
 }
 
-pub fn prompt_for_env(config: &HayakuConfig) -> Result<HashMap<String, String>> {
+fn add_config_env_to_context(config: &TemplateConfig, context: &mut TeraContext) -> Result<()> {
     if config.env.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(());
     }
-
-    let mut values = HashMap::new();
-    let mut keys: Vec<_> = config.env.keys().cloned().collect();
-    keys.sort();
-
-    for key in keys {
-        let env_cfg = config
-            .env
-            .get(&key)
-            .expect("Key fetched from known iterator");
-
-        let value = match &env_cfg {
+    for (raw_key, env_cfg) in config.env.iter() {
+        let key = canonical_env_key(raw_key);
+        match &env_cfg {
             EnvVarConfig::String { prompt, default } => {
                 let mut input = cliclack::input(prompt).required(true);
                 if let Some(default) = default {
                     input = input.default_input(default);
                 }
-                input.interact::<String>()?
+                let result = input.interact::<String>()?;
+                context.insert(&key, &result);
             }
             EnvVarConfig::Choices {
                 prompt,
@@ -63,43 +54,43 @@ pub fn prompt_for_env(config: &HayakuConfig) -> Result<HashMap<String, String>> 
                 if let Some(default) = default {
                     input = input.initial_value(default.clone())
                 }
-                input.interact()?
+                let result = input.interact()?;
+                context.insert(&key, &result);
             }
             EnvVarConfig::Bool { prompt, default } => {
                 let mut confirm = cliclack::confirm(prompt);
                 if *default {
                     confirm = confirm.initial_value(*default)
                 }
-                let confirmed = confirm.interact()?;
-                confirmed.to_string()
+                let result = confirm.interact()?;
+                context.insert(&key, &result);
             }
         };
-
-        values.insert(key, value);
     }
-
-    Ok(values)
+    Ok(())
 }
 
 pub fn build_context(
     project_name: &str,
-    config: &HayakuConfig,
-    env_values: &HashMap<String, String>,
-) -> TeraContext {
+    config: &TemplateConfig,
+    hayaku: &Hayaku,
+) -> Result<TeraContext> {
     let mut context = TeraContext::new();
     context.insert("project_name", project_name);
     context.insert("PROJECT_NAME", project_name);
+    context.insert("template_name", &config.name);
+    context.insert("TEMPLATE_NAME", &config.name);
 
-    for (key, value) in env_values {
-        context.insert(key, value);
-        let canonical = canonical_env_key(key);
-        context.insert(&canonical, value);
+    let global_settings = hayaku.parse_settings()?;
+    if let Some(global_env) = global_settings.global_env {
+        for (key, value) in global_env.iter() {
+            context.insert(&canonical_env_key(key), value);
+        }
     }
 
-    // Also expose the template name to templates that may rely on it.
-    context.insert("template_name", &config.name);
+    add_config_env_to_context(config, &mut context)?;
 
-    context
+    Ok(context)
 }
 
 pub fn canonical_env_key(raw: &str) -> String {

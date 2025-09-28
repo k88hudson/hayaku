@@ -19,7 +19,7 @@ pub struct ConfigToml {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HayakuConfig {
+pub struct TemplateConfig {
     pub name: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
@@ -27,7 +27,7 @@ pub struct HayakuConfig {
     pub env: HashMap<String, EnvVarConfig>,
 }
 
-impl HayakuConfig {
+impl TemplateConfig {
     pub fn default(dir: &str) -> Self {
         Self {
             name: dir.to_string(),
@@ -64,7 +64,7 @@ impl HayakuConfig {
             let dir_name = path.file_name().and_then(|c| c.to_str()).ok_or_else(|| {
                 anyhow!("Unable to determine directory name for {}", path.display())
             })?;
-            Ok(HayakuConfig::default(dir_name))
+            Ok(TemplateConfig::default(dir_name))
         }
     }
 }

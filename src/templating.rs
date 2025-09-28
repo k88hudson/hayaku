@@ -25,6 +25,8 @@ pub fn create_project(template_dir: &Path, dest_dir: &Path, context: &TeraContex
     let mut walker = WalkBuilder::new(template_dir);
     walker.git_ignore(true).hidden(false).overrides(overrides);
 
+    log_context_variables(context)?;
+
     for entry in walker.build() {
         let entry = entry?;
         if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
@@ -90,16 +92,25 @@ fn render_from_template_file(
     Ok(())
 }
 
+fn log_context_variables(context: &TeraContext) -> Result<()> {
+    let context_json = context.clone().into_json();
+    let pretty = serde_json::to_string_pretty(&context_json)
+        .map_err(|err| anyhow::anyhow!("Failed to format context for logging: {err}"))?;
+    cliclack::log::info(format!("Creating project with context:\n{}", pretty))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Hayaku;
     use std::{collections::HashMap, fs, path::Path};
 
-    use crate::config::HayakuConfig;
+    use crate::config::TemplateConfig;
     use crate::env;
 
-    fn config(id: &str) -> HayakuConfig {
-        HayakuConfig {
+    fn config(id: &str) -> TemplateConfig {
+        TemplateConfig {
             name: id.to_string(),
             display_name: None,
             description: None,
@@ -120,6 +131,7 @@ mod tests {
     fn renders_template_variables() {
         let template_dir = tempfile::tempdir().unwrap();
         let dest_dir = tempfile::tempdir().unwrap().path().join("demo");
+        let hayaku = Hayaku::try_new_from_dir(tempfile::tempdir().unwrap().path()).unwrap();
 
         write_template(template_dir.path(), "file.txt", b"Hello {{ project_name }}");
         write_template(
@@ -127,9 +139,7 @@ mod tests {
             "nested/config.toml",
             b"name = \"{{ PROJECT_NAME }}\"",
         );
-
-        let env_values = HashMap::new();
-        let context = env::build_context("demo", &config("some_template"), &env_values);
+        let context = env::build_context("demo", &config("some_template"), &hayaku).unwrap();
 
         create_project(template_dir.path(), &dest_dir, &context).unwrap();
 
@@ -147,6 +157,7 @@ mod tests {
     fn create_project_renders_and_respects_ignores() {
         let template_dir = tempfile::tempdir().unwrap();
         let dest_dir = tempfile::tempdir().unwrap().path().join("demo");
+        let hayaku = Hayaku::try_new_from_dir(tempfile::tempdir().unwrap().path()).unwrap();
 
         fs::create_dir_all(template_dir.path().join("nested")).unwrap();
         fs::create_dir_all(template_dir.path().join(".git")).unwrap();
@@ -161,8 +172,7 @@ mod tests {
         write_template(template_dir.path(), "ignored.txt", b"nope");
         write_template(template_dir.path(), ".git/config", b"secret");
 
-        let env_values = HashMap::new();
-        let context = env::build_context("demo", &config("demo"), &env_values);
+        let context = env::build_context("demo", &config("demo"), &hayaku).unwrap();
 
         create_project(template_dir.path(), &dest_dir, &context).unwrap();
 
@@ -181,7 +191,7 @@ mod tests {
     #[test]
     fn process_dest_path_substitutes_with_context() {
         let mut context = TeraContext::new();
-        context.insert("project_name", "demo");
+        context.insert("PROJECT_NAME", "demo");
 
         let dest = Path::new("output/[PROJECT_NAME]/config.toml");
         let resolved = super::process_dest_path(dest, &context);

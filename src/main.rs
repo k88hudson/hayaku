@@ -2,7 +2,8 @@ mod cli;
 mod config;
 mod env;
 mod git;
-mod local_templates;
+mod hayaku_context;
+pub use hayaku_context::Hayaku;
 mod templating;
 
 fn main() {
