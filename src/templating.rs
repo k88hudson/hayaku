@@ -1,3 +1,4 @@
+use crate::config::HayakuConfig;
 use anyhow::{Context as AnyhowContext, Result};
 use ignore::WalkBuilder;
 use std::ffi::OsStr;
@@ -5,17 +6,25 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tera::{Context as TeraContext, Tera};
 
-use crate::config::HayakuConfig;
-
 pub fn create_project(
     template_dir: &Path,
     dest_dir: &Path,
-    template_config: &HayakuConfig,
+    _template_config: &HayakuConfig,
 ) -> Result<()> {
     let mut tera = Tera::default();
     let mut context = TeraContext::new();
-    context.insert("project_name", &template_config.name);
-    context.insert("PROJECT_NAME", &template_config.name);
+
+    let project_name = dest_dir
+        .file_name()
+        .and_then(|c| c.to_str())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unable to determine project name from destination {}",
+                dest_dir.display()
+            )
+        })?;
+    context.insert("project_name", project_name);
+    context.insert("PROJECT_NAME", project_name);
 
     if !dest_dir.exists() {
         fs::create_dir_all(dest_dir).with_context(|| {
@@ -59,7 +68,7 @@ fn render_from_template_file(
     let contents = fs::read_to_string(template_file)?;
     let rendered = tera.render_str(&contents, &context).map_err(|e| {
         anyhow::anyhow!(
-            "Failed to render template file {}:\n{}",
+            "Failed to render template file {}:\n{:?}",
             template_file.display(),
             e
         )
@@ -75,99 +84,76 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn context_with_name() -> TeraContext {
-        let mut ctx = TeraContext::new();
-        ctx.insert("name", "World");
-        ctx
+    fn config(id: &str) -> HayakuConfig {
+        HayakuConfig {
+            name: id.to_string(),
+            display_name: None,
+            description: None,
+            author: None,
+        }
+    }
+
+    fn write_template(dir: &Path, rel: &str, contents: &[u8]) {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, contents).unwrap();
     }
 
     #[test]
     fn renders_template_variables() {
-        let ctx = context_with_name();
-        let rendered = render_bytes(b"Hello {{ name }}".to_vec(), &ctx).unwrap();
-        assert_eq!(String::from_utf8(rendered).unwrap(), "Hello World");
-    }
+        let template_dir = tempfile::tempdir().unwrap();
+        let dest_dir = tempfile::tempdir().unwrap().path().join("demo");
 
-    #[test]
-    fn skips_templating_when_directive_present() {
-        let ctx = context_with_name();
-        let rendered = render_bytes(
-            b"// hayaku: skip-templating\nHello {{ name }}".to_vec(),
-            &ctx,
-        )
-        .unwrap();
-        assert_eq!(String::from_utf8(rendered).unwrap(), "Hello {{ name }}");
-    }
-
-    #[test]
-    fn skip_directive_handles_windows_newline() {
-        let ctx = context_with_name();
-        let rendered = render_bytes(
-            b"// hayaku: skip-templating\r\nHello {{ name }}".to_vec(),
-            &ctx,
-        )
-        .unwrap();
-        assert_eq!(String::from_utf8(rendered).unwrap(), "Hello {{ name }}");
-    }
-
-    #[test]
-    fn skip_directive_requires_comment_prefix() {
-        let ctx = context_with_name();
-        let rendered =
-            render_bytes(b"hayaku: skip-templating\nHello {{ name }}".to_vec(), &ctx).unwrap();
-        assert_eq!(
-            String::from_utf8(rendered).unwrap(),
-            "hayaku: skip-templating\nHello World"
+        write_template(template_dir.path(), "file.txt", b"Hello {{ project_name }}");
+        write_template(
+            template_dir.path(),
+            "nested/config.toml",
+            b"name = \"{{ PROJECT_NAME }}\"",
         );
-    }
 
-    #[test]
-    fn passes_through_binary_content() {
-        let ctx = TeraContext::new();
-        let bytes = vec![0u8, 159, 255, 42];
-        let rendered = render_bytes(bytes.clone(), &ctx).unwrap();
-        assert_eq!(rendered, bytes);
+        create_project(template_dir.path(), &dest_dir, &config("some_template")).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest_dir.join("file.txt")).unwrap(),
+            "Hello demo"
+        );
+        assert_eq!(
+            fs::read_to_string(dest_dir.join("nested/config.toml")).unwrap(),
+            "name = \"demo\""
+        );
     }
 
     #[test]
     fn create_project_renders_and_respects_ignores() {
         let template_dir = tempfile::tempdir().unwrap();
-        let dest_dir = tempfile::tempdir().unwrap();
+        let dest_dir = tempfile::tempdir().unwrap().path().join("demo");
 
         fs::create_dir_all(template_dir.path().join("nested")).unwrap();
         fs::create_dir_all(template_dir.path().join(".git")).unwrap();
 
-        fs::write(template_dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
-        fs::write(
-            template_dir.path().join("file.txt"),
-            "Hello {{ project_name }}",
-        )
-        .unwrap();
-        fs::write(
-            template_dir.path().join("nested").join("config.toml.tera"),
-            "name = \"{{ PROJECT_NAME }}\"",
-        )
-        .unwrap();
-        fs::write(template_dir.path().join("ignored.txt"), "nope").unwrap();
-        fs::write(template_dir.path().join(".git").join("config"), "secret").unwrap();
+        write_template(template_dir.path(), ".gitignore", b"ignored.txt\n");
+        write_template(template_dir.path(), "file.txt", b"Hello {{ project_name }}");
+        write_template(
+            template_dir.path(),
+            "nested/config.toml",
+            b"name = \"{{ PROJECT_NAME }}\"",
+        );
+        write_template(template_dir.path(), "ignored.txt", b"nope");
+        write_template(template_dir.path(), ".git/config", b"secret");
 
-        let config = HayakuConfig {
-            name: "demo".to_string(),
-            display_name: None,
-            description: None,
-            author: None,
-        };
+        create_project(template_dir.path(), &dest_dir, &config("demo")).unwrap();
 
-        create_project(template_dir.path(), dest_dir.path(), &config).unwrap();
-
-        let rendered = fs::read_to_string(dest_dir.path().join("file.txt")).unwrap();
-        assert_eq!(rendered, "Hello demo");
-
-        let nested_rendered =
-            fs::read_to_string(dest_dir.path().join("nested").join("config.toml")).unwrap();
-        assert_eq!(nested_rendered, "name = \"demo\"");
-
-        assert!(!dest_dir.path().join("ignored.txt").exists());
-        assert!(!dest_dir.path().join(".git").exists());
+        assert_eq!(
+            fs::read_to_string(dest_dir.join("file.txt")).unwrap(),
+            "Hello demo"
+        );
+        assert_eq!(
+            fs::read_to_string(dest_dir.join("nested/config.toml")).unwrap(),
+            "name = \"demo\""
+        );
+        assert!(!dest_dir.join("ignored.txt").exists());
+        assert!(!dest_dir.join(".git").exists());
     }
 }

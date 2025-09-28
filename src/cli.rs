@@ -29,7 +29,7 @@ pub struct Hayaku {
 #[derive(Subcommand, Debug)]
 enum Commands {
     #[command(name = "create", about = "Create a new project")]
-    Create(Create),
+    Create(CreateOptions),
 
     #[command(name = "list", about = "List available templates")]
     List,
@@ -47,7 +47,7 @@ pub enum Source {
 }
 
 #[derive(Parser, Debug)]
-pub struct Create {
+pub struct CreateOptions {
     /// The path where the new project should be created
     #[arg(long, short)]
     project_path: Option<String>,
@@ -85,7 +85,7 @@ fn validate_directory(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn create(hayaku: &Hayaku, create_options: &Create) -> Result<()> {
+fn create(hayaku: &Hayaku, create_options: &CreateOptions) -> Result<()> {
     cliclack::intro("hayaku!")?;
 
     let template_path: PathBuf = if let Some(template_dir) = &create_options.template_dir {

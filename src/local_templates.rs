@@ -117,8 +117,11 @@ mod tests {
         let template_b = dir.path().join("beta");
         std::fs::create_dir_all(&template_a).expect("create alpha template");
         std::fs::create_dir_all(&template_b).expect("create beta template");
-        std::fs::write(template_a.join("hayaku.toml"), "id = \"alpha-template\"")
-            .expect("write config");
+        std::fs::write(
+            template_a.join("hayaku.toml"),
+            "[template]\nname = \"alpha-template\"",
+        )
+        .expect("write config");
 
         let hayaku = hayaku_with_dir(dir.path());
 
