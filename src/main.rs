@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod env;
 mod git;
 mod local_templates;
 mod templating;

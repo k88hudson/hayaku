@@ -1,4 +1,5 @@
 use crate::config::HayakuConfig;
+use crate::env;
 use crate::local_templates::LocalTemplates;
 use crate::templating;
 use anyhow::{Result, anyhow, bail};
@@ -167,7 +168,11 @@ fn create(create_options: &CreateOptions) -> Result<()> {
         }
     }
 
-    templating::create_project(&template_path, &dest_path, &template_config)?;
+    let project_name = env::project_name_from_path(&dest_path)?;
+    let env_values = env::prompt_for_env(&template_config)?;
+    let context = env::build_context(&project_name, &template_config, &env_values);
+
+    templating::create_project(&template_path, &dest_path, &context)?;
     cliclack::log::info(format!(
         "Project created successfully! Now run:\ncd {} ",
         &project_path_str

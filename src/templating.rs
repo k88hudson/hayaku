@@ -1,4 +1,3 @@
-use crate::config::HayakuConfig;
 use anyhow::{Context as AnyhowContext, Result};
 use ignore::WalkBuilder;
 use std::ffi::OsStr;
@@ -6,25 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tera::{Context as TeraContext, Tera};
 
-pub fn create_project(
-    template_dir: &Path,
-    dest_dir: &Path,
-    _template_config: &HayakuConfig,
-) -> Result<()> {
+pub fn create_project(template_dir: &Path, dest_dir: &Path, context: &TeraContext) -> Result<()> {
     let mut tera = Tera::default();
-    let mut context = TeraContext::new();
-
-    let project_name = dest_dir
-        .file_name()
-        .and_then(|c| c.to_str())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Unable to determine project name from destination {}",
-                dest_dir.display()
-            )
-        })?;
-    context.insert("project_name", project_name);
-    context.insert("PROJECT_NAME", project_name);
 
     if !dest_dir.exists() {
         fs::create_dir_all(dest_dir).with_context(|| {
@@ -50,7 +32,7 @@ pub fn create_project(
         let dest_rel: PathBuf = rel_path.to_path_buf();
         let dest_path = dest_dir.join(&dest_rel);
 
-        render_from_template_file(entry.path(), &dest_path, &mut tera, &context)?;
+        render_from_template_file(entry.path(), &dest_path, &mut tera, context)?;
     }
     Ok(())
 }
@@ -77,7 +59,17 @@ fn render_from_template_file(
     tera: &mut Tera,
     context: &TeraContext,
 ) -> Result<()> {
-    let dest_path = process_dest_path(dest_path, context);
+    let mut dest_path = process_dest_path(dest_path, context);
+
+    if dest_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("tera"))
+        .unwrap_or(false)
+    {
+        dest_path.set_extension("");
+    }
+
     if let Some(parent) = dest_path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create parent directory {}", parent.display()))?;
@@ -99,7 +91,10 @@ fn render_from_template_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::Path};
+    use std::{collections::HashMap, fs, path::Path};
+
+    use crate::config::HayakuConfig;
+    use crate::env;
 
     fn config(id: &str) -> HayakuConfig {
         HayakuConfig {
@@ -107,6 +102,7 @@ mod tests {
             display_name: None,
             description: None,
             author: None,
+            env: HashMap::new(),
         }
     }
 
@@ -130,7 +126,10 @@ mod tests {
             b"name = \"{{ PROJECT_NAME }}\"",
         );
 
-        create_project(template_dir.path(), &dest_dir, &config("some_template")).unwrap();
+        let env_values = HashMap::new();
+        let context = env::build_context("demo", &config("some_template"), &env_values);
+
+        create_project(template_dir.path(), &dest_dir, &context).unwrap();
 
         assert_eq!(
             fs::read_to_string(dest_dir.join("file.txt")).unwrap(),
@@ -160,7 +159,10 @@ mod tests {
         write_template(template_dir.path(), "ignored.txt", b"nope");
         write_template(template_dir.path(), ".git/config", b"secret");
 
-        create_project(template_dir.path(), &dest_dir, &config("demo")).unwrap();
+        let env_values = HashMap::new();
+        let context = env::build_context("demo", &config("demo"), &env_values);
+
+        create_project(template_dir.path(), &dest_dir, &context).unwrap();
 
         assert_eq!(
             fs::read_to_string(dest_dir.join("file.txt")).unwrap(),

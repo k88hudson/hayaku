@@ -1,17 +1,48 @@
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct HayakuConfig {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EnvVarConfig {
+    String {
+        prompt: String,
+        default: Option<String>,
+    },
+    Choices {
+        prompt: String,
+        choices: Vec<String>,
+        default: Option<String>,
+    },
+    Bool {
+        prompt: String,
+        #[serde(default)]
+        default: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemplateSection {
     pub name: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub author: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigToml {
-    pub template: HayakuConfig,
+    pub template: TemplateSection,
+    #[serde(default)]
+    pub env: HashMap<String, EnvVarConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HayakuConfig {
+    pub name: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub author: Option<String>,
+    pub env: HashMap<String, EnvVarConfig>,
 }
 
 impl HayakuConfig {
@@ -21,15 +52,13 @@ impl HayakuConfig {
             display_name: None,
             description: None,
             author: None,
+            env: HashMap::new(),
         }
     }
 
     pub fn try_from_dir(path: &std::path::Path) -> Result<Self> {
         if !path.is_dir() {
-            return Err(anyhow::anyhow!(
-                "Path {} is not a directory",
-                path.display()
-            ));
+            return Err(anyhow!("Path {} is not a directory", path.display()));
         }
 
         let config_path = path.join("hayaku.toml");
@@ -42,10 +71,16 @@ impl HayakuConfig {
                     config_path.display()
                 )
             })?;
-            Ok(config.template)
+            Ok(Self {
+                name: config.template.name,
+                display_name: config.template.display_name,
+                description: config.template.description,
+                author: config.template.author,
+                env: config.env,
+            })
         } else {
             let dir_name = path.file_name().and_then(|c| c.to_str()).ok_or_else(|| {
-                anyhow::anyhow!("Unable to determine directory name for {}", path.display())
+                anyhow!("Unable to determine directory name for {}", path.display())
             })?;
             Ok(HayakuConfig::default(dir_name))
         }
